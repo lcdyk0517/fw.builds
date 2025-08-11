@@ -1,4 +1,4 @@
-name: 🤖🟢 rocknix-stable 全自动镜像魔改（public 触发 / private 源码）
+name: 🤖🟢 rocknix-stable 全自动镜像魔改
 
 on:
   workflow_dispatch:
@@ -222,25 +222,29 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
+          set -euo pipefail
           export GH_TOKEN="${GITHUB_TOKEN}"
           tag=${{ needs.version-check.outputs.TAG_NAME }}
           max=$((2*1024*1024*1024))
           shopt -s nullglob
-          cd "${PRIVATE_PATH}"
-          for f in *.img.gz; do
+
+          for f in "${PRIVATE_PATH}"/*.img.gz; do
+            [ -e "$f" ] || continue
             size=$(stat -c%s "$f")
+            base=$(basename "$f")
             if [ "$size" -gt $max ]; then
-              echo "📦 $f 超过 2GB，开始 7z 分卷..."
+              echo "📦 $base 超过 2GB，开始 7z 分卷..."
               7z a -v1900m -mx=0 "${f}.7z" "$f" && rm -f "$f"
               for part in "${f}.7z".*; do
-                echo "⬆️ 上传分卷：$part"
-                gh release upload "$tag" "$part" --clobber
+                echo "⬆️ 上传分卷：$(basename "$part")"
+                gh release upload -R "$GITHUB_REPOSITORY" "$tag" "$part" --clobber
               done
             else
-              echo "⬆️ 上传单文件：$f"
-              gh release upload "$tag" "$f" --clobber
+              echo "⬆️ 上传单文件：$base"
+              gh release upload -R "$GITHUB_REPOSITORY" "$tag" "$f" --clobber
             fi
           done
+
 
   upload-to-baidu:
     name: ☁️ 从 Release 下载并逐个上传百度云
@@ -282,8 +286,8 @@ jobs:
           echo "📁 确保远程目录存在：$remote_dir"
           BaiduPCS-Go mkdir "$remote_dir" || echo "⚠️ 目录可能已存在"
 
-          echo "📥 拉取当前 Release 资源清单..."
-          names=$(gh release view "$tag" --json assets -q '.assets[].name')
+          echo "📥 拉取当前 Release 资源清单（来自本仓库）..."
+          names=$(gh release view -R "$GITHUB_REPOSITORY" "$tag" --json assets -q '.assets[].name')
 
           mapfile -t keys < <(echo "$names" | awk '
             { name=$0; if (name ~ /\.7z\./) sub(/\.7z\..*$/, "", name); print name }
@@ -303,7 +307,7 @@ jobs:
             workdir="$(mktemp -d)"
             echo "📂 临时目录：$workdir"
 
-            if gh release download "$tag" --pattern "${key}.7z.*" --clobber -D "$workdir"; then
+            if gh release download -R "$GITHUB_REPOSITORY" "$tag" --pattern "${key}.7z.*" --clobber -D "$workdir"; then
               echo "📦 已下载分卷，开始解压合并..."
               first_part=$(ls "$workdir/${key}.7z".001 2>/dev/null | head -n1 || true)
               if [ -z "${first_part:-}" ]; then
@@ -317,7 +321,7 @@ jobs:
               7z x "$first_part" -aoa -o"$workdir"
             else
               echo "ℹ️ 未找到分卷，尝试下载单文件：$key"
-              gh release download "$tag" --pattern "$key" --clobber -D "$workdir"
+              gh release download -R "$GITHUB_REPOSITORY" "$tag" --pattern "$key" --clobber -D "$workdir"
             fi
 
             if [ ! -f "$workdir/$key" ]; then
@@ -336,6 +340,7 @@ jobs:
           done
 
           echo "🎯 全部镜像处理完成（逐个上传并删除）"
+
 
   save-version:
     name: 保存版本号
