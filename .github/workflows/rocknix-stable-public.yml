@@ -30,7 +30,6 @@ permissions:
   contents: write   # 需要在 public 仓库创建/更新 Release 资产
 
 env:
-  # 改成你的私有源码仓库坐标
   PRIVATE_OWNER: lcdyk0517
   PRIVATE_REPO: rocknix_img_build
   PRIVATE_PATH: private-src
@@ -228,14 +227,16 @@ jobs:
           max=$((2*1024*1024*1024))
           shopt -s nullglob
 
+          # 在文件所在目录执行 7z，避免把绝对路径写入包
           for f in "${PRIVATE_PATH}"/*.img.gz; do
             [ -e "$f" ] || continue
+            dir="$(dirname "$f")"
+            base="$(basename "$f")"
             size=$(stat -c%s "$f")
-            base=$(basename "$f")
             if [ "$size" -gt $max ]; then
               echo "📦 $base 超过 2GB，开始 7z 分卷..."
-              7z a -v1900m -mx=0 "${f}.7z" "$f" && rm -f "$f"
-              for part in "${f}.7z".*; do
+              ( cd "$dir" && 7z a -v1900m -mx=0 "${base}.7z" "$base" && rm -f "$base" )
+              for part in "$dir/${base}.7z".*; do
                 echo "⬆️ 上传分卷：$(basename "$part")"
                 gh release upload -R "$GITHUB_REPOSITORY" "$tag" "$part" --clobber
               done
@@ -244,7 +245,6 @@ jobs:
               gh release upload -R "$GITHUB_REPOSITORY" "$tag" "$f" --clobber
             fi
           done
-
 
   upload-to-baidu:
     name: ☁️ 从 Release 下载并逐个上传百度云
@@ -324,15 +324,21 @@ jobs:
               gh release download -R "$GITHUB_REPOSITORY" "$tag" --pattern "$key" --clobber -D "$workdir"
             fi
 
+            # 可能包里带了子目录，用 find 兜底定位解压后的目标文件
             if [ ! -f "$workdir/$key" ]; then
-              echo "❌ 未找到解压后的文件：$key"
-              ls -la "$workdir"
-              rm -rf "$workdir"
-              continue
+              found_file="$(find "$workdir" -type f -name "$key" -print -quit || true)"
+              if [ -z "$found_file" ]; then
+                echo "❌ 未找到解压后的文件：$key（可能被存进了子目录）"
+                echo "📂 workdir 树："; find "$workdir" -maxdepth 3 -print
+                rm -rf "$workdir"
+                continue
+              fi
+            else
+              found_file="$workdir/$key"
             fi
 
             echo "⏫ 上传到百度云：$remote_dir/$key"
-            BaiduPCS-Go upload "$workdir/$key" "$remote_dir"
+            BaiduPCS-Go upload "$found_file" "$remote_dir"
 
             echo "🗑️ 上传完成，删除本地临时文件"
             rm -rf "$workdir"
@@ -340,7 +346,6 @@ jobs:
           done
 
           echo "🎯 全部镜像处理完成（逐个上传并删除）"
-
 
   save-version:
     name: 保存版本号
@@ -402,5 +407,5 @@ jobs:
           GH_TOKEN: ${{ secrets.GH_PAT }}
         run: |
           tag="${{ needs.version-check.outputs.TAG_NAME }}"
-          gh release delete "$tag" -y || echo "⚠️ Release 删除失败或不存在"
+          gh release delete -R "$GITHUB_REPOSITORY" "$tag" -y || echo "⚠️ Release 删除失败或不存在"
           gh api -X DELETE "repos/${{ github.repository }}/git/refs/tags/$tag" || echo "⚠️ Tag 删除失败或不存在"
