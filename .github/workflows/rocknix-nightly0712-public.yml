@@ -162,7 +162,7 @@ jobs:
           if [ -n "${{ github.event.inputs.selected_archs }}" ]; then
             IFS=',' read -ra base <<< "${{ github.event.inputs.selected_archs }}"
           else
-            base=("3326 nightly-20250712" "3326-emmc nightly-20250712")
+            base=("3326 nightly-20250712")
           fi
           result="["; for arch in "${base[@]}"; do result+="\"$arch\","; done
           result="${result%,}]"
@@ -356,51 +356,51 @@ jobs:
 
           echo "🎯 全部镜像处理完成（逐个上传并删除）"
 
-  save-version:
-    name: 保存版本号
-    needs:
-      - version-check
-      - upload-to-baidu
-    if: needs.version-check.outputs.SKIP_BUILD != 'true'
-    runs-on: ubuntu-latest
-    steps:
-      - name: 🧾 检出当前（公共）仓库
-        uses: actions/checkout@v4
-        with:
-          fetch-depth: 0
+  # save-version:
+  #   name: 保存版本号
+  #   needs:
+  #     - version-check
+  #     - upload-to-baidu
+  #   if: needs.version-check.outputs.SKIP_BUILD != 'true'
+  #   runs-on: ubuntu-latest
+  #   steps:
+  #     - name: 🧾 检出当前（公共）仓库
+  #       uses: actions/checkout@v4
+  #       with:
+  #         fetch-depth: 0
 
-      - name: 💾 保存当前版本号到 mod-version 分支
-        run: |
-          ver="${{ needs.version-check.outputs.LATEST_VERSION }}"
-          key="rocknix-nightly"
+  #     - name: 💾 保存当前版本号到 mod-version 分支
+  #       run: |
+  #         ver="${{ needs.version-check.outputs.LATEST_VERSION }}"
+  #         key="rocknix-nightly"
 
-          git config user.name  "github-actions[bot]"
-          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git fetch origin || true
+  #         git config user.name  "github-actions[bot]"
+  #         git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+  #         git fetch origin || true
 
-          if git ls-remote --exit-code --heads origin mod-version >/dev/null; then
-            git checkout mod-version
-          else
-            git checkout --orphan mod-version
-            git rm -rf . || true
-          fi
+  #         if git ls-remote --exit-code --heads origin mod-version >/dev/null; then
+  #           git checkout mod-version
+  #         else
+  #           git checkout --orphan mod-version
+  #           git rm -rf . || true
+  #         fi
 
-          touch .version
-          cp .version .version.bak || true
+  #         touch .version
+  #         cp .version .version.bak || true
 
-          if grep -q "^$key:" .version; then
-            sed -i "s/^$key:.*/$key:$ver/" .version
-          else
-            echo "$key:$ver" >> .version
-          fi
+  #         if grep -q "^$key:" .version; then
+  #           sed -i "s/^$key:.*/$key:$ver/" .version
+  #         else
+  #           echo "$key:$ver" >> .version
+  #         fi
 
-          if ! cmp -s .version .version.bak; then
-            git add .version
-            git commit -m "🔄 更新版本号 $key:$ver"
-            git push origin mod-version --force
-          else
-            echo "✅ 版本号未变化（$key:$ver），跳过提交。"
-          fi
+  #         if ! cmp -s .version .version.bak; then
+  #           git add .version
+  #           git commit -m "🔄 更新版本号 $key:$ver"
+  #           git push origin mod-version --force
+  #         else
+  #           echo "✅ 版本号未变化（$key:$ver），跳过提交。"
+  #         fi
 
   cleanup-on-failure:
     name: ❌ 构建失败清理
