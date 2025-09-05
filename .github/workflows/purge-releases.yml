@@ -1,0 +1,53 @@
+# .github/workflows/purge-releases.yml
+name: Purge All Releases
+
+on:
+  workflow_dispatch:
+    inputs:
+      confirm:
+        description: 'Type DELETE to confirm removing ALL releases in this repo'
+        default: 'DELETE'
+        required: true
+      delete_tags:
+        description: 'Also delete associated tags? (true/false)'
+        required: true
+        default: 'false'
+
+permissions:
+  contents: write
+
+jobs:
+  purge:
+    runs-on: ubuntu-latest
+    env:
+      GH_TOKEN: ${{ secrets.GH_PAT }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Safety check
+        run: |
+          if [[ "${{ github.event.inputs.confirm }}" != "DELETE" ]]; then
+            echo "Type DELETE to proceed."; exit 1; fi
+          if [[ -z "${GH_TOKEN}" ]]; then
+            echo "Missing GH_PAT secret."; exit 1; fi
+
+      - name: Show releases to be deleted
+        run: gh release list --limit 1000
+
+      - name: Delete all releases (optionally tags)
+        run: |
+          set -euo pipefail
+          CLEANUP_FLAG=""
+          [[ "${{ github.event.inputs.delete_tags }}" == "true" ]] && CLEANUP_FLAG="--cleanup-tag"
+
+          mapfile -t TAGS < <(gh release list --limit 1000 --json tagName --jq '.[].tagName')
+          if (( ${#TAGS[@]} == 0 )); then echo "No releases found."; exit 0; fi
+
+          for tag in "${TAGS[@]}"; do
+            echo "Deleting release: $tag"
+            gh release delete "$tag" -y $CLEANUP_FLAG || echo "Failed to delete $tag" >&2
+          done
+
+      - name: Summary
+        run: echo "Purge completed."
