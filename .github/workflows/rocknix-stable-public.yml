@@ -173,6 +173,7 @@ jobs:
         with:
           tag_name: ${{ steps.detect.outputs.TAG_NAME }}
           name: "[Rocknix Stable构建] ${{ steps.detect.outputs.LATEST_VERSION }}"
+          draft: true 
           body: |
             🎉 本次 Stable 构建成功！
             - 版本号: **${{ steps.detect.outputs.LATEST_VERSION }}**
